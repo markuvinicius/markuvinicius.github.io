@@ -231,6 +231,178 @@ group, or the committed offset has expired past retention):
 | `latest` (default) | Start from the end — only new messages | Can skip/lose messages produced while consumer was down |
 | `none` | Throw an exception if no offset exists | Requires explicit handling, but prevents silent data loss/reprocessing |
 
+### Manual partition assignment and offset control
+
+`auto.offset.reset` only applies within the automatic consumer-group model
+(`subscribe()`), where Kafka's group coordinator assigns partitions for you. Some use
+cases — a replay tool, an admin utility, a single-instance consumer that must own
+every partition deterministically — need **full manual control** over which
+partitions are read and from which offset, bypassing group coordination entirely.
+
+**1. Manual partition assignment with `assign()`**
+
+`assign()` is the alternative to `subscribe()`: the application specifies the exact
+partitions to read, and no group coordinator, no rebalancing, and no
+`group.id`-based partition assignment is involved. This trades automatic scaling for
+full determinism.
+
+```java
+import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.common.TopicPartition;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+
+public class ManualAssignmentConsumer {
+
+    public static void main(String[] args) {
+        Properties props = new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                org.apache.kafka.common.serialization.StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                org.apache.kafka.common.serialization.StringDeserializer.class);
+        // group.id is not required for assign()-based consumption
+
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+            TopicPartition partition0 = new TopicPartition("orders-created", 0);
+            TopicPartition partition1 = new TopicPartition("orders-created", 1);
+            List<TopicPartition> partitions = List.of(partition0, partition1);
+
+            consumer.assign(partitions); // explicit partitions, no group coordination
+
+            while (true) {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
+                for (ConsumerRecord<String, String> record : records) {
+                    System.out.printf("partition=%d offset=%d key=%s%n",
+                            record.partition(), record.offset(), record.key());
+                }
+            }
+        }
+    }
+}
+```
+
+**2. Seeking to the beginning, end, or a specific offset**
+
+Once partitions are assigned (via `assign()`, or after partitions are handed to you in
+a `ConsumerRebalanceListener`), `seek*()` methods reposition the consumer before the
+next `poll()`:
+
+```java
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+
+import java.util.List;
+
+public class SeekExamples {
+
+    static void repositionConsumer(KafkaConsumer<String, String> consumer,
+                                    TopicPartition partition0, TopicPartition partition1) {
+        // Replay a single partition from the very beginning
+        consumer.seekToBeginning(List.of(partition0));
+
+        // Skip partition1 forward to the latest offset (only new data)
+        consumer.seekToEnd(List.of(partition1));
+
+        // Jump to an exact, known offset — e.g., resuming from an externally
+        // stored checkpoint (a database row, a file) instead of Kafka's
+        // __consumer_offsets topic
+        consumer.seek(partition0, 4200L);
+    }
+}
+```
+
+`seekToBeginning`/`seekToEnd` are evaluated lazily — the actual offset is only
+resolved on the next `poll()` call, not immediately when `seek*()` is invoked.
+
+**3. Seeking by timestamp**
+
+`offsetsForTimes()` uses each segment's **time index** (see [Part A](#part-a--kafka-topics-advanced))
+to find the earliest offset at or after a given timestamp — useful for "replay the
+last hour" or "start from where an incident began" scenarios:
+
+```java
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
+import org.apache.kafka.common.TopicPartition;
+
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
+public class SeekByTimestampExample {
+
+    static void seekToOneHourAgo(KafkaConsumer<String, String> consumer,
+                                  TopicPartition partition) {
+        long oneHourAgoMs = Instant.now().minusSeconds(3600).toEpochMilli();
+
+        Map<TopicPartition, Long> timestampsToSearch = new HashMap<>();
+        timestampsToSearch.put(partition, oneHourAgoMs);
+
+        Map<TopicPartition, OffsetAndTimestamp> result =
+                consumer.offsetsForTimes(timestampsToSearch);
+
+        OffsetAndTimestamp offsetAndTimestamp = result.get(partition);
+        if (offsetAndTimestamp != null) {
+            consumer.seek(partition, offsetAndTimestamp.offset());
+        } else {
+            // No message exists at or after that timestamp on this partition
+            consumer.seekToEnd(java.util.List.of(partition));
+        }
+    }
+}
+```
+
+**4. Committing specific offsets manually**
+
+`commitSync()`/`commitAsync()` normally commit the offsets of the last batch returned
+by `poll()`. Passing an explicit `Map<TopicPartition, OffsetAndMetadata>` instead lets
+an application commit a **precise** offset per partition — for example, committing
+after each individual record instead of each batch, which tightens the at-least-once
+reprocessing window from Module 2:
+
+```java
+import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.common.TopicPartition;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+public class ManualOffsetCommitConsumer {
+
+    static void processWithPerRecordCommit(KafkaConsumer<String, String> consumer) {
+        while (true) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
+
+            for (ConsumerRecord<String, String> record : records) {
+                process(record); // application logic — must be idempotent (Module 1)
+
+                TopicPartition partition = new TopicPartition(record.topic(), record.partition());
+                // +1: the offset to resume from is the *next* record to read
+                OffsetAndMetadata nextOffset = new OffsetAndMetadata(record.offset() + 1);
+
+                consumer.commitSync(Collections.singletonMap(partition, nextOffset));
+            }
+        }
+    }
+
+    private static void process(ConsumerRecord<String, String> record) {
+        System.out.println("Processing offset " + record.offset());
+    }
+}
+```
+
+Committing per-record trades throughput (many small commits) for a tighter recovery
+window — on restart, at most one record is reprocessed per partition instead of an
+entire batch. This is a direct application of the at-least-once trade-off from
+[Module 2](02-application-development.md#8-delivery-semantics-recap-developers-perspective):
+finer-grained commits reduce (but never eliminate) duplicate reprocessing.
+
 ### Incremental cooperative rebalancing and static membership
 
 Pre-Kafka 2.4 ("eager") rebalancing stopped **all** consumers in a group and reassigned
@@ -262,6 +434,14 @@ it reconnects within `session.timeout.ms`.
    perceived consumer failure?
 8. How does static group membership reduce unnecessary rebalances during rolling
    deployments?
+9. Why does `assign()` not require a `group.id`, and what capability do you lose
+   compared to `subscribe()`?
+10. Why are `seekToBeginning()`/`seekToEnd()` described as "lazy," and what does that
+    mean for when the repositioning actually happens?
+11. What does `offsetsForTimes()` return if no message exists at or after the
+    requested timestamp on a partition?
+12. Why does committing a specific offset after every record (instead of after every
+    batch) shrink — but not eliminate — the at-least-once reprocessing window?
 
 ## Answer key
 
@@ -285,6 +465,22 @@ it reconnects within `session.timeout.ms`.
 8. A statically-assigned consumer (`group.instance.id`) keeps its partition assignment
    across a restart as long as it reconnects within `session.timeout.ms`, so a planned
    restart doesn't trigger a group-wide rebalance.
+9. `assign()` bypasses the group coordinator entirely — the application specifies
+   exact partitions instead of Kafka assigning them — so there's no group to join and
+   no `group.id`-based coordination; the trade-off is losing automatic scaling and
+   rebalancing across multiple consumer instances.
+10. The actual offset lookup and repositioning only happens on the next `poll()` call,
+    not at the moment `seekToBeginning()`/`seekToEnd()` is invoked — so code that reads
+    `position()` immediately after seeking, without polling first, won't see the new
+    position yet.
+11. It returns `null` for that partition (no matching `OffsetAndTimestamp`), which the
+    application must handle explicitly — e.g., falling back to `seekToEnd()`.
+12. Because on restart, the consumer resumes from the last *committed* offset — with
+    per-record commits, at most one record can be reprocessed per partition; with
+    per-batch commits, the entire batch since the last commit can be reprocessed.
+    Duplicates are still possible either way because processing and committing are not
+    a single atomic operation (this is the same at-least-once trade-off from Module 2,
+    just with a smaller blast radius).
 
 Continue to [Module 8 — Exam Day and Next Steps](08-exam-day-and-next-steps.md).
 
