@@ -92,6 +92,6 @@ gaps:
 
 Don't spend study time on: Confluent RBAC/ksqlDB/CFK, system-specific connectors,
 plugins/extensions, networking, cluster administration/deployment, or infrastructure
-provisioning (see [Module 0](00-introduction.md)).
+provisioning (see [Introduction](README.md)).
 
 Good luck on the exam.

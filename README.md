@@ -43,6 +43,8 @@ study time — spend roughly proportional effort to each section's weight.
 | 4 | Kafka Connect | 15% | [Module 4](04-kafka-connect.md) |
 | 5 | Application Testing | 8% | [Module 5](05-application-testing.md) |
 | 6 | Application Observability | 13% | [Module 6](06-application-observability.md) |
+| 7 | Advanced Topics | Extra | [Module 7](07-kafka-advanced.md) |
+| 8 | Exam Day Preparation | Extra | [Module 8](08-exam-day-preparation-and-next-steps.md) |
 
 Together, Sections 1 and 2 make up more than half the exam (51%) — mastering core
 architecture, producers, and consumers pays off the most.
