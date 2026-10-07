@@ -1,4 +1,4 @@
-# Module 0 — Introduction: Preparing for the Confluent Certified Developer for Apache Kafka (CCDAK) Exam
+# Introduction: Preparing for the Confluent Certified Developer for Apache Kafka (CCDAK) Exam
 
 ## Learning objectives
 
