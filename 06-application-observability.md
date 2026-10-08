@@ -83,7 +83,7 @@ own application first.
 ### 6. Kafka cluster operations (awareness only)
 
 The exam explicitly puts cluster administration out of scope (see
-[Module 0](00-introduction.md)), but recognizing that these operational activities
+the [Introduction](README.md)), but recognizing that these operational activities
 exist — and that they can explain transient client-side symptoms like a rebalance or a
 latency spike — is useful context: rolling broker restarts, updating broker
 configuration, rebalancing partitions across brokers, changing replication factor, and

@@ -1,4 +1,4 @@
-# Module 8 — Exam Day and Next Steps
+# Module 9 — Exam Day and Next Steps
 
 ## Learning objectives
 
@@ -61,6 +61,14 @@ each bullet without notes, revisit the linked module.
 - [ ] `min.insync.replicas`, unclean leader election trade-offs.
 - [ ] Compression algorithm trade-offs, batching, idempotent producers.
 - [ ] Poll/heartbeat thread model, incremental cooperative rebalancing, static membership.
+
+### Kafka Streams Advanced — [Module 8](08-kafka-streams-advanced.md)
+
+- [ ] When to choose the DSL, the Processor API, or a combination of both.
+- [ ] DSL object types, transformation and join behavior, and co-partitioning requirements.
+- [ ] `KTable.suppress()` emission and buffering trade-offs.
+- [ ] Processor context, punctuators, and state-store selection.
+- [ ] Testing complete topologies and processors with the Streams test utilities.
 
 ## Test-taking strategy by question format
 

@@ -482,7 +482,7 @@ it reconnects within `session.timeout.ms`.
     a single atomic operation (this is the same at-least-once trade-off from Module 2,
     just with a smaller blast radius).
 
-Continue to [Module 8 — Exam Day and Next Steps](08-exam-day-and-next-steps.md).
+Continue to [Module 8 — Kafka Streams Advanced](08-kafka-streams-advanced.md).
 
 ---
 *Sources: Conduktor, "Kafka Topics Advanced", "Kafka Producers Advanced", and "Kafka

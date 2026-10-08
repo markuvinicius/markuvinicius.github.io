@@ -34,7 +34,7 @@ existing connector rather than writing one from scratch.
 Connect runs as its own cluster of **workers**, separate from the Kafka brokers. Workers
 distribute connector tasks among themselves for scalability and fault tolerance — this
 distribution and the underlying worker cluster operations are out of scope for the
-exam (see [Module 0](00-introduction.md)); what matters for a developer is how to
+exam (see the [Introduction](README.md)); what matters for a developer is how to
 **configure and use** connectors.
 
 Connect workers run in one of two modes:
